@@ -1,0 +1,148 @@
+---
+title: "Midterm Project 2"
+author: 'Jerry Chan'
+output:
+  html_document:
+    df_print: paged
+header-includes: \usepackage{bbm}
+---
+
+## Introduction
+In this project, we are going to inspect the Romano-British dataset. We are curious about the whether the population mean of each pottery's chemical concentrations is the same across different kiln. 
+
+
+### Data Description
+The dataset consists of chemical concentration of 48 Romano-British pottery shards.[^1]
+
+[^1]:Tubb, A., A. J. Parker, and G. Nickless. 1980. “The Analysis of Romano-British Pottery by Atomic Absorption Spectrophotometry”. Archaeometry 22: 153-71.
+
+#### Metadata [^2]
+1. **No**: Integer, Number ID
+2. **ID** Characters, ID
+3. **Kiln**: Integer, kiln site where the pottery was found.
+4. **Al2O3**: Double, concentration of aluminium trioxide
+5. **Fe2O3**: Double, concentration of iron trioxide
+6. **MgO**: Double, concentration of magnesium oxide
+7. **CaO**: Double, concentration of calcium oxide
+8. **Na2O**: Double, concentration of natrium oxide
+9. **K2O**: Double, concentration of kalium oxide
+10. **TiO2**: Double, concentration of titanium oxide
+11. **MnO**: Double, concentration of mangan oxide
+12. **BaO**: Double, concentration of barium oxide
+
+[^2]:: T. McElroy, “Ma189Project2” [Online]. Available: https://canvas.ucsd.edu/courses/24041/assignments/274206 [Accessed: 11-Feb-2021]
+#### Import Package
+```{r}
+library(data.table)
+library(ggplot2)
+```
+#### Load Data
+```{r}
+df <- read.csv('RBPottery.csv', header = TRUE)
+head(df)
+```
+
+## Body
+
+### 0. observe the dataset and decide test method
+
+First, we plot the means and variances for each chemicals' concentrations grouped by kiln sites.
+
+**Mean**:
+```{r}
+agg = aggregate(df[,4:12], by=list(df$Kiln), FUN=mean)
+m1 <- as.matrix(agg[-1])
+row.names(m1) <- agg[,1]
+barplot(m1, beside=TRUE, legend=row.names(m1))
+```
+
+**Variance**:
+```{r}
+agg = aggregate(df[,4:12], by=list(df$Kiln), FUN=var)
+m1 <- as.matrix(agg[-1])
+row.names(m1) <- agg[,1]
+barplot(m1, beside=TRUE, legend=row.names(m1))
+```
+From the visualization, we can see that the means and variance for each column vary between different kiln. To determine if the difference is statistically significant, we will perform MANOVA (Multivariate analysis of variance) in the following sections. 
+
+**Null hypothesis**: the means vector for each group is the same
+
+**Alternative hypothesis**: the means vector for each group is not the same
+
+**Significance Level**:0.05
+
+**Assumptions**
+
+1. The data from group k has common mean vector:
+We can assume that pottery from each site is produced by similar processes. Therefore they sould have similar chemical concentration. This assumption is satisfied.
+
+2. Homoskedasticity: The data from all groups have common covariance matrix:
+From the plot above, we can see that the variances is not the same across each group. Our data doesn't seem to satisfy this assumption.
+
+3. Independence: The observations are independently sampled:
+Chemical concentration from different pottery are independent. This assumption is satisfied.
+
+4. Normality: The data are multivariate normally distributed:
+We can assume that chemical concentrations are fixed in different producing procedural and the errors follow normal distribution. Therefore the data are multivariate normally distributed. THis assumption is satisfied.
+
+**Test Statistic**
+
+In the lecture, 4 test statistics are introduced: Wilks’s Lambda, Pillai’s Trace, Hotelling-Lawley Trace, and Roy’s Maximum Root. In this project, I choose to use Pillai's Trace as it's commonly consider a more robust statistic. The following section I'll implement the test following the steps on Lecture 12.[^3]
+
+[^3]: Tucker McElroy, "Ma189Lecture12" [Online]. Available: http://github.com/tuckermcelroy/ma189/tree/main/Lectures
+
+### 1. Split the dataset by Kiln
+```{r}
+df1 <- (df[df$Kiln==1,4:12])
+df2 <- (df[df$Kiln==2,4:12])
+df3 <- (df[df$Kiln==3,4:12])
+df4 <- (df[df$Kiln==4,4:12])
+df5 <- (df[df$Kiln==5,4:12])
+```
+
+### 2. Compute grouped sample mean and total sample mean of each column
+```{r}
+m1 <- colMeans(df1)
+n1 <- dim(df1)[1]
+m2 <- colMeans(df2)
+n2 <- dim(df2)[1]
+m3 <- colMeans(df3)
+n3 <- dim(df3)[1]
+m4 <- colMeans(df4)
+n4 <- dim(df4)[1]
+m5 <- colMeans(df5)
+n5 <- dim(df5)[1]
+mg <- (m1*n1 + m2*n2 + m3*n3 + m4*n4 + m5*n5)/(n1 +n2+n3+n4+n5)
+mg
+```
+
+
+### 3. Compute *E*: Error Sum of Squares
+```{r}
+ESS <- cov(df1)*(n1-1) + cov(df2)*(n2-1) + cov(df3)*(n3-1) + cov(df4)*(n4-1) + cov(df5)*(n5-1)
+ESS
+```
+
+### 4. Compute *H*: Hypothesis Sum of Squares
+```{r}
+HSS <- n1*(m1 - mg) %*% t(m1 - mg) + n2*(m2 - mg) %*% t(m2 - mg) + n3*(m3 - mg) %*% t(m3 - mg) +n4*(m4 - mg) %*% t(m4 - mg) + n5*(m5 - mg) %*% t(m5 - mg)
+HSS
+```
+
+### 5. Pillai’s Trace
+```{r}
+N <- n1+n2+n3+n4+n5
+g <- 5
+p <- 9
+pillai <- sum(diag(HSS %*% solve(ESS + HSS)))
+pillai_s <- min(p,g-1)
+pillai_m <- (abs(p-g+1)-1)/2
+pillai_r <- (N-g-p-1)/2
+pillai_stat <- (2*pillai_r + pillai_s + 1)*pillai/
+  ((2*pillai_m + pillai_s + 1)*(pillai_s - pillai))
+p_val <- 1 - pf(pillai_stat,df1 = pillai_s*(2*pillai_r + pillai_s + 1),
+       df2 = pillai_s*(2*pillai_m + pillai_s + 1))
+p_val
+```
+## Conclusion
+The p value (7.6e-8) is far below the significance level (0.05). We reject the null hypothesis. There is a  significant difference among the 5 group means for these 9 variable.
